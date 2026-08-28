@@ -15,11 +15,17 @@ Cách chạy:
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timezone
+from dotenv import find_dotenv, load_dotenv
+import httpx
+
+load_dotenv(find_dotenv())
 
 from mcp.server.mcpserver import MCPServer
 
 SERVER_VERSION = "2.0.0"
+WEATHERAPI_KEY = os.getenv("WEATHERAPI_KEY")
 
 mcp = MCPServer(
     "weather-v2",
@@ -51,10 +57,31 @@ _MOCK_DB = {
 }
 
 
+def _fetch_weatherapi(endpoint: str, params: dict[str, str]) -> dict | None:
+    if not WEATHERAPI_KEY:
+        return None
+    params["key"] = WEATHERAPI_KEY
+    url = f"https://api.weatherapi.com/v1/{endpoint}"
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            resp = client.get(url, params=params)
+            if resp.status_code == 200:
+                return resp.json()
+    except Exception:
+        pass
+    return None
+
+
 # ── Tool v1 (giữ nguyên cho backward compatibility) ──────────────────
 @mcp.tool()
 def get_weather(city: str) -> str:
     """[v1] Lấy thời tiết hiện tại — trả chuỗi đơn giản. Deprecated, dùng get_weather_v2."""
+    real_data = _fetch_weatherapi("current.json", {"q": city, "aqi": "no"})
+    if real_data:
+        cur = real_data["current"]
+        loc = real_data["location"]
+        return f"{loc['name']}: {cur['temp_c']}°C, {cur['condition']['text']}"
+
     data = _MOCK_DB.get(city)
     if data:
         return f"{city}: {data['temp']}°C, {data['condition']}"
@@ -72,9 +99,41 @@ def get_weather_v2(
 
     Args:
         city: Tên thành phố (ví dụ: Hanoi, Danang)
-        include_forecast: Có trả thêm dự báo 2 ngày tới không (mặc định: False)
+        include_forecast: Có trả thêm dự báo các ngày tới không (mặc định: False)
         units: Đơn vị nhiệt độ — "celsius" hoặc "fahrenheit" (mặc định: celsius)
     """
+    days = "3" if include_forecast else "1"
+    real_data = _fetch_weatherapi("forecast.json", {"q": city, "days": days, "aqi": "no"})
+    if real_data:
+        cur = real_data["current"]
+        loc = real_data["location"]
+        temp = cur["temp_f"] if units == "fahrenheit" else cur["temp_c"]
+        result: dict = {
+            "api_version": "2.0",
+            "source": "WeatherAPI.com (live)",
+            "city": loc["name"],
+            "region": loc["region"],
+            "country": loc["country"],
+            "temp": temp,
+            "units": units,
+            "condition": cur["condition"]["text"],
+            "humidity": cur["humidity"],
+            "wind_speed_kmh": cur["wind_kph"],
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        if include_forecast and "forecast" in real_data:
+            result["forecast"] = [
+                {
+                    "date": d["date"],
+                    "maxtemp": d["day"]["maxtemp_f"] if units == "fahrenheit" else d["day"]["maxtemp_c"],
+                    "mintemp": d["day"]["mintemp_f"] if units == "fahrenheit" else d["day"]["mintemp_c"],
+                    "condition": d["day"]["condition"]["text"],
+                    "chance_of_rain": d["day"].get("daily_chance_of_rain", 0),
+                }
+                for d in real_data["forecast"]["forecastday"]
+            ]
+        return json.dumps(result, ensure_ascii=False)
+
     data = _MOCK_DB.get(city)
     if not data:
         return json.dumps(
@@ -86,8 +145,9 @@ def get_weather_v2(
     if units == "fahrenheit":
         temp = round(temp * 9 / 5 + 32, 1)
 
-    result: dict = {
+    result_mock: dict = {
         "api_version": "2.0",
+        "source": "mock_db",
         "city": city,
         "temp": temp,
         "units": units,
@@ -97,9 +157,9 @@ def get_weather_v2(
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
     if include_forecast:
-        result["forecast"] = data["forecast"]
+        result_mock["forecast"] = data["forecast"]
 
-    return json.dumps(result, ensure_ascii=False)
+    return json.dumps(result_mock, ensure_ascii=False)
 
 
 # ── Resource: server metadata (client dùng để kiểm tra version) ──────
@@ -120,3 +180,4 @@ def server_info() -> str:
 
 if __name__ == "__main__":
     mcp.run()
+

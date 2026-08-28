@@ -11,23 +11,24 @@ def check_environment():
     """Check if .env file exists and is configured"""
     print("🔍 Checking environment configuration...")
     
-    env_file = Path(".env")
-    if not env_file.exists():
+    from dotenv import find_dotenv, load_dotenv
+    dotenv_path = find_dotenv()
+    if not dotenv_path:
         print("❌ .env file not found")
-        print("   Run: echo 'GOOGLE_API_KEY=your_key' > .env")
+        print("   Create .env at project root or cwd with GOOGLE_API_KEY / GEMINI_API_KEY")
         return False
     
-    # Check if GOOGLE_API_KEY is set
-    from dotenv import load_dotenv
-    load_dotenv()
+    load_dotenv(dotenv_path)
     
-    api_key = os.getenv("GOOGLE_API_KEY")
-    if not api_key or api_key == "your_google_api_key_here":
-        print("❌ GOOGLE_API_KEY not configured in .env")
+    api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+    if not api_key or api_key in ["your_google_api_key_here", "your_gemini_api_key_here"]:
+        print("❌ GOOGLE_API_KEY / GEMINI_API_KEY not configured in .env")
         print("   Get key from: https://aistudio.google.com/apikey")
         return False
     
-    print(f"✅ GOOGLE_API_KEY configured ({api_key[:10]}...)")
+    # Ensure GOOGLE_API_KEY is in environment for ADK
+    os.environ["GOOGLE_API_KEY"] = api_key
+    print(f"✅ Google/Gemini API key configured ({api_key[:10]}...)")
     return True
 
 def check_dependencies():
@@ -62,18 +63,18 @@ def check_agent_structure():
     """Check if agent directory structure is correct"""
     print("\n🔍 Checking agent structure...")
     
+    script_dir = Path(__file__).parent
     required_files = [
-        "weather_agent/agent.py",
-        "weather_agent/__init__.py",
+        script_dir / "weather_agent/agent.py",
+        script_dir / "weather_agent/__init__.py",
     ]
     
     all_exist = True
-    for file_path in required_files:
-        path = Path(file_path)
+    for path in required_files:
         if path.exists():
-            print(f"✅ {file_path}")
+            print(f"✅ {path.name}")
         else:
-            print(f"❌ {file_path} not found")
+            print(f"❌ {path} not found")
             all_exist = False
     
     return all_exist
@@ -82,28 +83,30 @@ def check_mcp_server():
     """Check if MCP server is accessible"""
     print("\n🔍 Checking MCP server connectivity...")
     
-    server_url = "https://weather-mcp-server-oze7nwnjba-as.a.run.app"
+    server_url = os.getenv("MCP_SERVER_URL", "http://localhost:8085/mcp")
     
     try:
         import httpx
         import asyncio
         
         async def test_connection():
-            async with httpx.AsyncClient() as client:
+            headers = {"Accept": "text/event-stream, application/json, text/plain, */*"}
+            async with httpx.AsyncClient(headers=headers) as client:
                 response = await client.get(server_url, timeout=10.0)
                 return response.status_code
         
         status_code = asyncio.run(test_connection())
         
-        if status_code in [200, 404]:  # 404 is expected for GET on MCP endpoint
-            print(f"✅ MCP server reachable at {server_url}")
+        if status_code in [200, 400, 404, 405, 406]:  # FastMCP streamable-http endpoints return 200/400/404/405/406 on GET probe
+            print(f"✅ MCP server reachable at {server_url} (HTTP {status_code})")
             return True
         else:
-            print(f"⚠️  MCP server returned status {status_code}")
+            print(f"⚠️  MCP server returned unexpected status {status_code}")
             return False
             
     except Exception as e:
-        print(f"❌ Cannot reach MCP server: {e}")
+        print(f"❌ Cannot reach MCP server ({server_url}): {e}")
+        print("   Make sure the MCP server is running (e.g. `cd 04-lab/mcp-server && uv run python weather.py`)")
         return False
 
 def check_agent_import():

@@ -21,18 +21,22 @@
 
 ---
 
-## 3a. Authentication
+## 3a. Authentication (Bài Trung bình)
 
 Server chạy qua **Streamable HTTP** thay vì stdio, kèm bearer token verification.
 
 ```bash
-# Terminal 1 — khởi động server
+# Terminal 1 — khởi động server (port 8001)
 python auth_server.py
-# Server lắng nghe tại http://localhost:8000/mcp
 
-# Terminal 2 — client kết nối kèm token
+# Terminal 2 — client tự động kiểm thử 3 kịch bản
 python auth_client.py
 ```
+
+Kịch bản kiểm thử:
+1. **Token ĐÚNG (`Bearer dev-token-abc123`)**: Server trả về `200 OK`, client lấy danh sách tool và gọi tool thành công.
+2. **THIẾU Token (Không có header `Authorization`)**: Server từ chối request (`401 Unauthorized / MCPError`).
+3. **Token SAI (`Bearer wrong-token-xyz`)**: Server từ chối request (`401/403 Forbidden / MCPError`).
 
 Luồng:
 
@@ -45,14 +49,10 @@ Client                                Server
   │                                      │   token hợp lệ → AccessToken
   │◀── 200 OK (tools, results) ────────  │
   │                                      │
-  │── POST /mcp (token sai) ──────────▶  │
-  │◀── 401 Unauthorized ───────────────  │
+  │── POST /mcp (token sai / thiếu) ──▶  │
+  │◀── 401/403 Unauthorized ───────────  │
 ```
 
-- Token hợp lệ → truy cập tool bình thường
-- Thiếu token → `401`
-- Token sai → `403`
-- Logic tool không biết gì về auth — SDK xử lý ở tầng transport
 
 ---
 
@@ -109,7 +109,7 @@ connect_and_call()  ← tự kết nối đúng transport (stdio/HTTP) + auth
 
 ---
 
-## 3c. Versioning & Backward Compatibility
+## 3c. Versioning & Backward Compatibility (Bài Khó)
 
 Server v2 dùng 3 kỹ thuật để thêm tính năng mà không break client cũ:
 

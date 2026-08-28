@@ -5,7 +5,8 @@
 ## Cấu trúc repo
 
 ```
-day26-mcp/
+Day26-MCP-Tools-Integration/
+├── .env.example             ← File mẫu cấu hình biến môi trường
 ├── README.md                ← Bạn đang đọc file này
 ├── requirements.txt         ← pip install -r requirements.txt
 │
@@ -13,41 +14,55 @@ day26-mcp/
 │   ├── README.md
 │   └── weather_function_calling.py
 │
-├── 02-mcp-basics/           ← Bước 2: MCP server + client (không cần API key)
+├── 02-mcp-basics/           ← Bước 2: MCP server + client cơ bản (stdio)
 │   ├── README.md
 │   ├── weather_server.py
 │   └── weather_client.py
 │
-└── 03-production/           ← Bước 3: Auth, Tool Registry, Versioning
+├── 03-production/           ← Bước 3 (Bài Trung bình & Khó): Auth, Tool Registry, Versioning
+│   ├── README.md
+│   ├── auth_server.py       ← Server Streamable HTTP có Token Auth
+│   ├── auth_client.py       ← Test 3 kịch bản: token đúng, thiếu token, token sai
+│   ├── registry.json        ← Tool Registry danh mục tool-centric
+│   ├── registry_client.py   ← Client khám phá và tự động kết nối theo tag/keyword
+│   ├── versioned_server.py  ← Server v2: tool thật WeatherAPI, tool v1/v2 song song, server://info
+│   └── versioned_client.py  ← Client đọc metadata server://info trước khi gọi tool
+│
+└── 04-lab/                  ← Bước 4: Full Stack Weather Agent (Google ADK + MCP Server)
     ├── README.md
-    ├── auth_server.py
-    ├── auth_client.py
-    ├── registry.json
-    ├── registry_client.py
-    └── versioned_server.py
+    ├── mcp-server/          ← FastMCP Server kết nối WeatherAPI.com thật (port 8085)
+    └── mcp-client/          ← Google ADK Web Agent kết nối MCP Server (port 8000)
 ```
 
 ## Quick start
 
 ```bash
+# 1. Chuẩn bị môi trường và cấu hình
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+cp .env.example .env   # Điền GEMINI_API_KEY, WEATHERAPI_KEY vào file .env
 
-# MCP demo (không cần API key)
-cd 02-mcp-basics && python weather_client.py
+# 2. Function Calling thuần (cần Gemini API key)
+python 01-function-calling/weather_function_calling.py
 
-# Function Calling (cần Gemini API key)
-export GEMINI_API_KEY=...
-cd 01-function-calling && python weather_function_calling.py
+# 3. [BÀI CƠ BẢN] MCP qua stdio
+python 02-mcp-basics/weather_client.py
 
-# Production — Auth (2 terminal)
-cd 03-production
-python auth_server.py              # terminal 1
-python auth_client.py              # terminal 2
+# 4. [BÀI TRUNG BÌNH] MCP Streamable HTTP + Authentication (2 terminal)
+python 03-production/auth_server.py       # Terminal 1
+python 03-production/auth_client.py       # Terminal 2 (tự động test token đúng, thiếu token, token sai)
 
-# Production — Tool Registry
-cd 03-production && python registry_client.py
+# 5. [BÀI KHÓ] Versioning cho tool thật + Resource metadata `server://info`
+python 03-production/versioned_client.py  # Đọc metadata server://info, gọi tool v1 (backward-compat) và v2 (live API)
+
+# 6. Tool Registry Discovery
+python 03-production/registry_client.py
+
+# 7. Dự án Lab Google ADK + MCP Server
+cd 04-lab/mcp-server && uv run python weather.py   # Terminal 1 (port 8085)
+cd 04-lab/mcp-client && uv run adk web             # Terminal 2 (port 8000 -> mở http://localhost:8000)
 ```
+
 
 ---
 

@@ -28,13 +28,17 @@ import os
 import sys
 from pathlib import Path
 
+from dotenv import find_dotenv, load_dotenv
 import httpx
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamable_http_client
 
+load_dotenv(find_dotenv())
+
 REGISTRY_PATH = Path(__file__).parent / "registry.json"
+
 
 
 class ToolRegistry:
