@@ -63,6 +63,68 @@ cd 04-lab/mcp-server && uv run python weather.py   # Terminal 1 (port 8085)
 cd 04-lab/mcp-client && uv run adk web             # Terminal 2 (port 8000 -> mở http://localhost:8000)
 ```
 
+---
+
+## Báo cáo nộp bài Day 26 (Đầy đủ tiêu chí Mức Khó)
+
+### 1. Mô tả công việc thực tế mà MCP Server giải quyết
+Hệ thống **MCP Weather Services** cung cấp khả năng tích hợp dữ liệu thời tiết thời gian thực và dự báo đa ngày từ [WeatherAPI.com](https://www.weatherapi.com) cho các mô hình AI/Agent (như Google ADK, Claude Code, Gemini). MCP Server đóng vai trò làm cầu nối chuẩn hóa (standard protocol), giải phóng LLM khỏi việc phải viết code tích hợp API thủ công, đồng thời cung cấp lớp bảo mật (Bearer Token Auth), quản lý phiên bản (Versioning v1/v2 song song) và tự công bố metadata qua Resource `server://info`.
+
+### 2. Danh sách và mô tả Input/Output của từng MCP Tool
+
+| MCP Tool | Nơi triển khai | Input Parameters | Output Format | Mô tả chi tiết |
+|---|---|---|---|---|
+| `get_weather` (v1) | `02-mcp-basics`, `03-production` | `city: str` (Tên thành phố, ví dụ: "Hanoi") | `str` (chuỗi văn bản đơn giản: "Hanoi: 34.4°C, Sunny") | Lấy thời tiết hiện tại. Trong v2 được đánh dấu deprecated nhưng vẫn duy trì backward-compatibility cho client cũ. |
+| `get_weather_v2` (v2) | `03-production/versioned_server.py` | `city: str`<br>`include_forecast: bool = False`<br>`units: str = "celsius"` | `str` (JSON cấu trúc chi tiết chứa nhiệt độ, độ ẩm, gió, mảng dự báo thời tiết 3 ngày) | Tool nâng cấp v2: hỗ trợ lấy dự báo thời tiết đa ngày, chuyển đổi đơn vị đo (°C/°F) và truy vấn live WeatherAPI.com. |
+| `get_current_weather` | `04-lab/mcp-server/weather.py` | `city: str` | `str` (Báo cáo điều kiện thời tiết thực tế chi tiết gồm UV, áp suất, độ ẩm, hướng gió) | Truy vấn trực tiếp API thời tiết thời gian thực cho Google ADK Agent. |
+| `get_forecast` | `04-lab/mcp-server/weather.py` | `city: str`<br>`days: int = 3` | `str` (Báo cáo dự báo thời tiết từ 1 đến 3 ngày tới) | Dự báo nhiệt độ cao nhất/thấp nhất, khả năng mưa (%) theo ngày. |
+| `health_check` | `04-lab/mcp-server/weather.py` | *(Không có)* | `str` ("✅ Weather MCP Server is running!...") | Kiểm tra trạng thái hoạt động và kết nối của server. |
+
+### 3. Hướng dẫn đăng ký MCP Server với Claude Code
+
+Bạn có thể đăng ký MCP Server vào Claude Code bằng một lệnh duy nhất:
+
+```bash
+# Đăng ký MCP Server cơ bản (stdio):
+claude mcp add weather -- python $(pwd)/02-mcp-basics/weather_server.py
+
+# Hoặc đăng ký Versioned MCP Server (v2):
+claude mcp add weather-v2 -- python $(pwd)/03-production/versioned_server.py
+```
+
+### 4. Kiểm tra các tiêu chí bài nộp
+
+#### Mức Cơ bản: Chạy MCP Server qua stdio & Client tự khám phá tool
+```bash
+python 02-mcp-basics/weather_client.py
+```
+*Kết quả:* Client tự động gọi `list_tools()` khám phá tool `get_weather` và gọi thực thi qua stdio.
+
+#### Mức Trung bình: Streamable HTTP + Authentication bằng Token
+```bash
+# Terminal 1: Khởi chạy Server có xác thực (port 8001)
+python 03-production/auth_server.py
+
+# Terminal 2: Chạy Client kiểm thử tự động 3 kịch bản
+python 03-production/auth_client.py
+```
+*Kết quả:*
+1. **Token hợp lệ** (`Bearer dev-token-abc123`): Thành công `200 OK`, lấy danh sách tool và gọi tool thời tiết.
+2. **Thiếu token**: Server từ chối request (`401 Unauthorized / MCPError`).
+3. **Token sai**: Server từ chối request (`401/403 Forbidden / MCPError`).
+
+#### Mức Khó: Versioning tool thật + Backward-compat + `server://info` + Client đọc metadata
+```bash
+python 03-production/versioned_client.py
+```
+*Kết quả:*
+1. **Đọc metadata trước**: Client gọi `session.read_resource("server://info")` nhận metadata version `2.0.0`, danh sách tool deprecated (`get_weather`) và migration guide.
+2. **Backward compatibility**: Client cũ gọi `get_weather('Hanoi')` v1 vẫn hoạt động bình thường (trả dữ liệu thật từ WeatherAPI).
+3. **Tính năng mới**: Gọi `get_weather_v2('Hanoi', forecast=True)` nhận kết quả JSON chi tiết kèm dự báo 3 ngày từ WeatherAPI.com.
+
+---
+
+
 
 ---
 
